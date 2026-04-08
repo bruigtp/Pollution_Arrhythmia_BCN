@@ -1,0 +1,6177 @@
+---
+title: "Main analysis of the association between air pollution and arrhythmias in the city of Barcelona"
+format: html
+---
+
+Data is not available due to privacy restrictions. Below is the code used for the main analysis of pollution on arrhythmias.
+
+# Flowchart
+
+`r fig_nums("flowchart_study", "Flowchart of the patients-episodes in the study")`
+
+```{r}
+#| fig.width: 8
+#| fig.height: 8
+
+fc1 <- as_fc(N = 1397, label = "patients\nfollowed at CIED clinics") |>
+  fc_filter(
+    N = 493,
+    label = "patients\nincluded during period 2017-2022",
+    show_exc = TRUE,
+    just_exc = "left",
+    text_pattern_exc = "{n} {label}",
+    label_exc = "excluded:\n - 901 outside the city of Barcelona\n - 3 with less than 18 years old",
+    offset_exc = 0.18
+  )
+
+N_duracion <- data_ar_all |>
+  filter(
+    (duracion_s >= 30 & tipo_episodio == "Auriculars") |
+      (duracion_s >= 10 & tipo_episodio == "Ventriculars")
+  ) |>
+  nrow()
+
+sdata_ar_all <- data_ar_all |>
+  filter(
+    (duracion_s >= 30 & tipo_episodio == "Auriculars") |
+      (duracion_s >= 10 & tipo_episodio == "Ventriculars")
+  ) |>
+  group_by(center, patient_id, tipo_episodio, fecha_inicio_day) |>
+  summarise(
+    duracion_s = sum(duracion_s),
+    t_epis = unique(t_epis)
+  )
+
+fc2 <- as_fc(N = nrow(data_ar_all), label = "episodes of arrhythmia") |>
+  fc_filter(
+    N = N_duracion,
+    label = "episodes of arrhythmia\n(atrial ≥ 30s; ventricular ≥ 10s)",
+    show_exc = TRUE,
+    label_exc = "short duration",
+    offset_exc = 0.18
+  ) |>
+  fc_filter(
+    N = nrow(sdata_ar_all),
+    label = "daily aggregated episodes of arrhythmia",
+    offset_exc = 0.18
+  ) |>
+  fc_filter(
+    N = nrow(data_ar),
+    label = "definite episodes of arrhythmia",
+    show_exc = TRUE,
+    label_exc = "outside follow-up",
+    offset_exc = 0.18
+  ) |>
+  fc_split(
+    N = table(data_ar$tipo_episodio),
+    label = c("atrial arrhythmias", "ventricular arrhythmias")
+  )
+
+fc <- fc_stack(list(fc1, fc2), unite = TRUE) |>
+  fc_theme(
+    text_pattern = "{n} {label}",
+    text_pattern_init = "{n} {label}",
+    text_pattern_exc = "{n} {label}"
+  ) |>
+  fc_draw(big.mark = ",")
+
+fc
+```
+
+# Descriptive
+
+## Clinical information
+
+There are `r round(sum(data_clinic$t_fup), 2)` patient-years in the study.
+
+`r tab_nums("tab_demo", "Demographics characteristics")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(arritmia, dictionary |> filter(tab == "demo") |> pull(var)) |>
+  tbl_summary(
+    by = arritmia,
+    statistic = all_continuous() ~ "{mean} ({sd})"
+  ) |>
+  add_overall() |>
+  add_n() |>
+  add_stat(
+    fns = everything() ~ add_by_n
+  ) |>
+  modify_header(starts_with("add_n_stat") ~ "**N**") |>
+  modify_table_body(
+    ~ .x |>
+      dplyr::relocate(n, .after = stat_0) |>
+      dplyr::relocate(add_n_stat_1, .after = stat_1) |>
+      dplyr::relocate(add_n_stat_2, .after = stat_2)
+  )
+
+```
+
+`r tab_nums("tab_comor", "Comorbidities characteristics")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(arritmia, dictionary |> filter(tab == "comor") |> pull(var)) |>
+  tbl_summary(
+    by = arritmia,
+    value = list(!contains("Tabaco") ~ "Si")
+  ) |>
+  add_overall() |>
+  add_n() |>
+  add_stat(
+    fns = everything() ~ add_by_n
+  ) |>
+  modify_header(starts_with("add_n_stat") ~ "**N**") |>
+  modify_table_body(
+    ~ .x |>
+      dplyr::relocate(n, .after = stat_0) |>
+      dplyr::relocate(add_n_stat_1, .after = stat_1) |>
+      dplyr::relocate(add_n_stat_2, .after = stat_2)
+  )
+
+```
+
+`r tab_nums("tab_cardio", "Heart disease characteristics")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(arritmia, dictionary |> filter(tab == "cardio") |> pull(var)) |>
+  tbl_summary(
+    by = arritmia,
+    value = list(
+      c(
+        trc_sino,
+        trc_auricula_sino,
+        indicacion_aco,
+        im_moderadasevera,
+        eao_moderadasevera,
+        has_fa_ecg
+      ) ~ "Si"
+    ),
+    type = chadsvasc_score ~ "continuous2",
+    statistic = chadsvasc_score ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]")
+  ) |>
+  add_overall() |>
+  add_n() |>
+  add_stat(
+    fns = everything() ~ add_by_n
+  ) |>
+  modify_header(starts_with("add_n_stat") ~ "**N**") |>
+  modify_table_body(
+    ~ .x |>
+      dplyr::relocate(n, .after = stat_0) |>
+      dplyr::relocate(add_n_stat_1, .after = stat_1) |>
+      dplyr::relocate(add_n_stat_2, .after = stat_2)
+  )
+
+
+```
+
+`r tab_nums("tab_trat", "Treatment characteristics")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(arritmia, dictionary |> filter(tab == "trat") |> pull(var)) |>
+  tbl_summary(
+    by = arritmia,
+    value = everything() ~ "Si"
+  ) |>
+  add_overall() |>
+  add_n() |>
+  add_stat(
+    fns = everything() ~ add_by_n
+  ) |>
+  modify_header(starts_with("add_n_stat") ~ "**N**") |>
+  modify_table_body(
+    ~ .x |>
+      dplyr::relocate(n, .after = stat_0) |>
+      dplyr::relocate(add_n_stat_1, .after = stat_1) |>
+      dplyr::relocate(add_n_stat_2, .after = stat_2)
+  )
+
+
+```
+
+`r tab_nums("tab_lab", "Laboratory results")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(arritmia, dictionary |> filter(tab == "lab") |> pull(var)) |>
+  tbl_summary(
+    by = arritmia
+  ) |>
+  add_overall() |>
+  add_n() |>
+  add_stat(
+    fns = everything() ~ add_by_n
+  ) |>
+  modify_header(starts_with("add_n_stat") ~ "**N**") |>
+  modify_table_body(
+    ~ .x |>
+      dplyr::relocate(n, .after = stat_0) |>
+      dplyr::relocate(add_n_stat_1, .after = stat_1) |>
+      dplyr::relocate(add_n_stat_2, .after = stat_2)
+  )
+
+
+```
+
+## Outcomes
+
+`r tab_nums("tab_out", "Patient's outcomes")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(dictionary |> filter(tab == "out") |> pull(var)) |>
+  tbl_summary(
+    value = c(ingreso_cv, ingresohospitalario, exitus) ~ "Si"
+  )
+
+```
+
+## Contamination
+
+`r tab_nums("ts_data_cont", "Daily mean contamination values")`
+
+```{r}
+
+ts_data |>
+  as_tibble() |>
+  dplyr::select(co:so2) |>
+  pivot_longer(everything(), names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(cont)
+  ) |>
+  tbl_summary(
+    include = conc,
+    by = cont,
+    type = conc ~ "continuous2",
+    statistic = conc ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = conc ~ "Contamination",
+    missing = "always"
+  )
+
+```
+
+`r tab_nums("ts_data_cont_year", "Daily mean contamination values per year")`
+
+```{r}
+ts_data |>
+  as_tibble() |>
+  mutate(year = year(date)) |>
+  dplyr::select(year, co:so2) |>
+  rename_all(toupper) |>
+  tbl_summary(
+    include = CO:SO2,
+    by = YEAR,
+    type = everything() ~ "continuous2",
+    statistic = everything() ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_cont_pre_zbe", "Daily mean contamination values pre-ZBE")`
+
+```{r}
+ts_data |>
+  filter(date < ymd("2020-01-01")) |>
+  as_tibble() |>
+  dplyr::select(co:so2) |>
+  pivot_longer(everything(), names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(cont)
+  ) |>
+  tbl_summary(
+    include = conc,
+    by = cont,
+    type = conc ~ "continuous2",
+    statistic = conc ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = conc ~ "Contamination",
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_cont_post_zbe", "Daily mean contamination values post-ZBE")`
+
+```{r}
+ts_data |>
+  filter(date >= ymd("2020-01-01")) |>
+  as_tibble() |>
+  dplyr::select(co:so2) |>
+  pivot_longer(everything(), names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(cont)
+  ) |>
+  tbl_summary(
+    include = conc,
+    by = cont,
+    type = conc ~ "continuous2",
+    statistic = conc ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = conc ~ "Contamination",
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_cont_up", "Daily mean contamination values (for up-hill areas)")`
+
+```{r}
+
+ts_data |>
+  as_tibble() |>
+  dplyr::select(co_up:so2_up) |>
+  pivot_longer(everything(), names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(gsub("_up$", "", cont))
+  ) |>
+  tbl_summary(
+    include = conc,
+    by = cont,
+    type = conc ~ "continuous2",
+    statistic = conc ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = conc ~ "Contamination",
+    missing = "always"
+  )
+
+```
+
+`r tab_nums("ts_data_cont_nucli", "Daily mean contamination values (for urban core areas)")`
+
+```{r}
+
+ts_data |>
+  as_tibble() |>
+  dplyr::select(co_nucli:so2_nucli) |>
+  pivot_longer(everything(), names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(gsub("_nucli$", "", cont))
+  ) |>
+  tbl_summary(
+    include = conc,
+    by = cont,
+    type = conc ~ "continuous2",
+    statistic = conc ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = conc ~ "Contamination",
+    missing = "always"
+  )
+
+```
+
+## Meteorological
+
+`r tab_nums("ts_data_meteo", "Daily mean meteorogical data values")`
+
+```{r}
+data_meteo |>
+  as_tibble() |>
+  group_by(date) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  pivot_longer(-date, names_to = "meteo", values_to = "value") |>
+  mutate(
+    meteo = factor(
+      meteo,
+      levels = c(
+        "temperatura",
+        "temperatura_maxima",
+        "temperatura_nit",
+        "temperatura_dia",
+        "humitat_relativa",
+        "pressio_atmosferica"
+      ),
+      labels = c(
+        "Temperatura",
+        "Temperatura màxima",
+        "Temperatura nocturna",
+        "Temperatura diürna",
+        "Humitat relativa",
+        "Pressió atmosfèrica"
+      )
+    )
+  ) |>
+  tbl_summary(
+    include = value,
+    by = meteo,
+    type = value ~ "continuous2",
+    statistic = value ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = value ~ "Daily value",
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_meteo_y", "Daily mean meteorogical data values per year")`
+
+```{r}
+data_meteo |>
+  as_tibble() |>
+  group_by(date) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  mutate(
+    year = year(date)
+  ) |>
+  dplyr::select(
+    year,
+    "Temperatura" = temperatura,
+    "Temperatura màxima" = temperatura_maxima,
+    "Temperatura nocturna" = temperatura_nit,
+    "Temperatura diürna" = temperatura_dia,
+    "Humitat relativa" = humitat_relativa,
+    "Pressió atmosfèrica" = pressio_atmosferica
+  ) |>
+  tbl_summary(
+    include = -year,
+    by = year,
+    type = everything() ~ "continuous2",
+    statistic = everything() ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_meteo_y_zbe", "Daily mean meteo values pre-ZBE")`
+
+```{r}
+data_meteo |>
+  filter(date < ymd("2020-01-01")) |>
+  as_tibble() |>
+  group_by(date) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  pivot_longer(-date, names_to = "meteo", values_to = "value") |>
+  mutate(
+    meteo = factor(
+      meteo,
+      levels = c(
+        "temperatura",
+        "temperatura_maxima",
+        "temperatura_nit",
+        "temperatura_dia",
+        "humitat_relativa",
+        "pressio_atmosferica"
+      ),
+      labels = c(
+        "Temperatura",
+        "Temperatura màxima",
+        "Temperatura nocturna",
+        "Temperatura diürna",
+        "Humitat relativa",
+        "Pressió atmosfèrica"
+      )
+    )
+  ) |>
+  tbl_summary(
+    include = value,
+    by = meteo,
+    type = value ~ "continuous2",
+    statistic = value ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = value ~ "Daily value",
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_meteo_y_zbe2", "Daily mean meteo values post-ZBE")`
+
+```{r}
+data_meteo |>
+  filter(date >= ymd("2020-01-01")) |>
+  as_tibble() |>
+  group_by(date) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  pivot_longer(-date, names_to = "meteo", values_to = "value") |>
+  mutate(
+    meteo = factor(
+      meteo,
+      levels = c(
+        "temperatura",
+        "temperatura_maxima",
+        "temperatura_nit",
+        "temperatura_dia",
+        "humitat_relativa",
+        "pressio_atmosferica"
+      ),
+      labels = c(
+        "Temperatura",
+        "Temperatura màxima",
+        "Temperatura nocturna",
+        "Temperatura diürna",
+        "Humitat relativa",
+        "Pressió atmosfèrica"
+      )
+    )
+  ) |>
+  tbl_summary(
+    include = value,
+    by = meteo,
+    type = value ~ "continuous2",
+    statistic = value ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    label = value ~ "Daily value",
+    missing = "always"
+  )
+```
+
+`r tab_nums("ts_data_meteo_area", "Daily mean contamination values in function of the area")`
+
+```{r}
+
+data_meteo_cp |>
+  as_tibble() |>
+  group_by(area, date) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  dplyr::select(
+    area,
+    "Temperatura" = temperatura,
+    "Temperatura màxima" = temperatura_maxima,
+    "Temperatura nocturna" = temperatura_nit,
+    "Temperatura diürna" = temperatura_dia,
+    "Humitat relativa" = humitat_relativa,
+    "Pressió atmosfèrica" = pressio_atmosferica
+  ) |>
+  tbl_summary(
+    include = -area,
+    by = area,
+    type = everything() ~ "continuous2",
+    statistic = everything() ~ c("{mean} ({sd})", "{median} [{p25}; {p75}]"),
+    missing = "always"
+  )
+```
+
+## Arrhythmias
+
+### Per patient
+
+`r tab_nums("tab_ar_pac_1", "Patients arrhythmias")`
+
+```{r}
+
+data_clinic |>
+  dplyr::select(arritmia, at, vt, at_vt) |>
+  tbl_summary(
+    value = everything() ~ "Si"
+  )
+
+```
+
+`r tab_nums("tab_ar_pac_chr_raw", "Patients arrhythmias characteristics")`
+
+```{r}
+tbl_1 <- data_ar_pac |>
+  filter(tipo_episodio == "Auriculars") |>
+  dplyr::select(longest_epis_h, n_epis) |>
+  tbl_summary()
+
+tbl_2 <- data_ar_pac |>
+  filter(tipo_episodio == "Ventriculars") |>
+  dplyr::select(longest_epis, n_epis) |>
+  tbl_summary()
+
+tbl_stack(list(tbl_1, tbl_2), group_header = c("Auriculars", "Ventriculars")) |>
+  modify_header(stat_0 ~ "") |>
+  modify_footnote(everything() ~ NA) |>
+  as_gt() |>
+  tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_row_groups(groups = everything())
+  )
+```
+
+### Per episode
+
+`r tab_nums("tab_ar_epi_1", "Arrhythmias episodes")`
+
+```{r}
+
+data_ar |>
+  tbl_summary(
+    include = tipo_episodio
+  )
+
+```
+
+`r tab_nums("tab_ar_epi_chr", "Arrhythmias episodes characteristics")`
+
+```{r}
+
+tbl_1 <- data_ar |>
+  filter(tipo_episodio == "Auriculars") |>
+  dplyr::select(first_duracion_h, duracion_h, t_epis) |>
+  tbl_summary()
+
+tbl_2 <- data_ar |>
+  filter(tipo_episodio == "Ventriculars") |>
+  dplyr::select(first_duracion_s, duracion_s, t_epis) |>
+  tbl_summary(
+    label = first_duracion_s ~ "Duración primer episodio (antes de colapsar)"
+  )
+
+tbl_stack(list(tbl_1, tbl_2), group_header = c("Auriculars", "Ventriculars")) |>
+  modify_header(stat_0 ~ "") |>
+  modify_footnote(everything() ~ NA) |>
+  as_gt() |>
+  tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_row_groups(groups = everything())
+  )
+```
+
+### Per days
+
+`r tab_nums("tab_days", "Days with arrhythmias episodes")`
+
+```{r}
+ts_data |>
+  as_tibble() |>
+  dplyr::select(starts_with("y")) |>
+  tbl_summary(
+    include = c(y, y_auri, y_vent),
+    label = c(
+      y ~ "Arrhythmias",
+      y_auri ~ "Auricular arrhythmias",
+      y_vent ~ "Ventricular arrhythmias"
+    )
+  )
+```
+
+# Time series
+
+## Arrhyhthmias
+
+::: {.panel-tabset}
+
+### Day
+
+`r fig_nums("data_ar_ts", "Time series of the arrhythmia episodes")`
+
+```{r fig.width = 8}
+data_plot <- data_ar |>
+  group_by(tipo_episodio, fecha_inicio_day) |>
+  summarise(n = n()) |>
+  tsibble::tsibble(index = fecha_inicio_day, key = c(tipo_episodio)) |>
+  tsibble::fill_gaps(
+    n = 0,
+    .start = ymd("2017-01-01"),
+    .end = ymd("2022-12-31")
+  )
+
+p <- ggplot(data_plot, aes(x = fecha_inicio_day, y = n)) +
+  facet_wrap(~tipo_episodio) +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Number") +
+  expand_limits(y = 0)
+
+ggplotly(p)
+```
+
+### Weekly
+
+`r fig_nums("data_ar_ts_w", "Time series of the arrhythmia episodes")`
+
+```{r fig.width = 8}
+data_plot <- data_ar |>
+  group_by(tipo_episodio, fecha_inicio_day) |>
+  summarise(n = n()) |>
+  tsibble::tsibble(index = fecha_inicio_day, key = c(tipo_episodio)) |>
+  tsibble::fill_gaps(
+    n = 0,
+    .start = ymd("2017-01-01"),
+    .end = ymd("2022-12-31")
+  ) |>
+  mutate(
+    week = week(fecha_inicio_day),
+    year = year(fecha_inicio_day),
+    week = str_glue("{year}, {week}")
+  ) |>
+  as_tibble() |>
+  group_by(tipo_episodio, week) |>
+  summarise(fecha_inicio_day = first(fecha_inicio_day), n = sum(n))
+
+
+p <- ggplot(data_plot, aes(x = fecha_inicio_day, y = n)) +
+  facet_wrap(~tipo_episodio) +
+  geom_line(linewidth = 0.5) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Week", y = "Number") +
+  theme_bw()
+
+ggplotly(p)
+```
+
+### Month
+
+`r fig_nums("data_ar_ts2", "Time series of the arrhythmia episodes (number and incidence)")`
+
+```{r fig.width = 8}
+# Generate one row per month in the study period
+months_seq <- tibble(
+  month = seq(ymd("2017-01-01"), ymd("2022-12-01"), by = "1 month")
+)
+
+# A patient contributes to a month if their follow-up window overlaps it
+patients_per_month <- months_seq |>
+  cross_join(
+    data_clinic |> select(patient_id, fecha_inicio_seguimiento, fup_date)
+  ) |>
+  filter(
+    fecha_inicio_seguimiento <= (month + months(1) - days(1)), # started before month ends
+    fup_date >= month # still followed at month start
+  ) |>
+  group_by(month) |>
+  summarise(n_patients = n_distinct(patient_id))
+
+# Join with the arrhythmia counts and compute incidence
+data_plot <- data_ar |>
+  group_by(tipo_episodio, fecha_inicio_day) |>
+  summarise(n = n(), .groups = "drop") |>
+  tsibble::tsibble(index = fecha_inicio_day, key = tipo_episodio) |>
+  tsibble::fill_gaps(
+    n = 0,
+    .start = ymd("2017-01-01"),
+    .end = ymd("2022-12-31")
+  ) |>
+  as_tibble() |>
+  mutate(
+    month = ymd(str_glue(
+      "{year(fecha_inicio_day)}-{month(fecha_inicio_day)}-01"
+    )),
+    tipo_episodio = factor(
+      tipo_episodio,
+      levels = c("Auriculars", "Ventriculars"),
+      labels = c("Atrial arrhythmias", "Ventricular arrhythmias")
+    )
+  ) |>
+  group_by(tipo_episodio, month) |>
+  summarise(n = sum(n), .groups = "drop") |>
+  left_join(patients_per_month, by = "month") |>
+  mutate(
+    incidence = n / n_patients * 100 # events per 100 patients-month
+  )
+
+# --- Scale factor to map incidence onto the count axis ---
+# Use the ratio of the ranges so both series fill the panel nicely
+scale_factor <- max(data_plot$n, na.rm = TRUE) /
+  max(data_plot$incidence, na.rm = TRUE)
+
+p <- ggplot(data_plot, aes(x = month)) +
+  facet_wrap(~tipo_episodio) +
+  geom_point(aes(y = n), alpha = 0.4, size = 1) +
+  geom_line(aes(y = n)) +
+  geom_line(
+    aes(y = incidence * scale_factor, colour = "Incidence"),
+    linetype = "dashed"
+  ) +
+  scale_y_continuous(
+    name = "Frequency (n)",
+    sec.axis = sec_axis(
+      transform = ~ . / scale_factor,
+      name = "Incidence (100 patient-months)"
+    )
+  ) +
+  scale_color_manual(values = c("Incidence" = "#A50F15")) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Month") +
+  theme_bw() +
+  guides(colour = "none")
+
+ggplotly(p)
+```
+
+:::
+
+## Pollutants
+
+`r fig_nums("data_cont_0", "Time series of the raw pollution values daily or monthly averaged")`
+
+::: {.panel-tabset}
+
+### Daily (all)
+
+```{r fig.width = 10, fig.height = 8}
+sdata_cont <- data_cont |>
+  dplyr::select(codigopostal, date, co_0:so2_0) |>
+  pivot_longer(co_0:so2_0, names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(gsub("_0", "", cont))
+  )
+
+p <- ggplot(sdata_cont, aes(x = date, y = conc)) +
+  facet_wrap(~cont, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Pollution")
+
+# ggplotly(p)
+p
+```
+
+### Daily mean
+
+```{r fig.width = 10, fig.height = 8}
+data_plot <- data_cont |>
+  dplyr::select(codigopostal, date, co_0:so2_0) |>
+  pivot_longer(co_0:so2_0, names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(gsub("_0", "", cont))
+  ) |>
+  group_by(cont, date) |>
+  summarise(conc = mean(conc))
+
+p <- ggplot(data_plot, aes(x = date, y = conc)) +
+  facet_wrap(~cont, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Pollution")
+
+# ggplotly(p)
+p
+```
+
+### Monthly mean
+
+```{r fig.width = 10, fig.height = 8}
+data_plot <- data_cont |>
+  dplyr::select(codigopostal, date, co_0:so2_0) |>
+  pivot_longer(co_0:so2_0, names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(gsub("_0", "", cont)),
+    month = ymd(str_glue("{year(date)}-{month(date)}-01"))
+  ) |>
+  group_by(cont, month) |>
+  summarise(conc = mean(conc, na.rm = TRUE))
+
+p <- ggplot(data_plot, aes(x = month, y = conc)) +
+  facet_wrap(~cont, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Pollution")
+
+# ggplotly(p)
+p
+```
+
+:::
+
+`r fig_nums("data_cont", "Time series of the pollution values daily or monthly averaged. Negative values and oultiers have been settled to a minimum/maximum value")`
+
+::: {.panel-tabset}
+
+### Daily (all)
+
+```{r fig.width = 10, fig.height = 8}
+sdata_cont <- data_cont |>
+  dplyr::select(codigopostal, date, co:so2) |>
+  pivot_longer(co:so2, names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(cont)
+  )
+
+p <- ggplot(sdata_cont, aes(x = date, y = conc)) +
+  facet_wrap(~cont, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Pollution")
+
+# ggplotly(p)
+p
+```
+
+### Daily mean
+
+```{r fig.width = 10, fig.height = 8}
+data_plot <- data_cont |>
+  dplyr::select(codigopostal, date, co:so2) |>
+  pivot_longer(co:so2, names_to = "cont", values_to = "conc") |>
+  mutate(
+    cont = toupper(cont)
+  ) |>
+  group_by(cont, date) |>
+  summarise(conc = mean(conc))
+
+p <- ggplot(data_plot, aes(x = date, y = conc)) +
+  facet_wrap(~cont, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Pollution")
+
+# ggplotly(p)
+p
+```
+
+### Monthly mean
+
+```{r fig.width = 10, fig.height = 8}
+data_plot <- data_cont |>
+  dplyr::select(codigopostal, date, co:so2) |>
+  pivot_longer(co:so2, names_to = "cont", values_to = "conc") |>
+  mutate(
+    month = ymd(str_glue("{year(date)}-{month(date)}-01"))
+  ) |>
+  group_by(cont, month) |>
+  summarise(conc = mean(conc, na.rm = TRUE))
+
+label_units <- c(
+  "co" = "CO~(mg/m^{3})",
+  "no2" = "NO[2]~(mu*g/m^{3})",
+  "o3" = "O[3]~(mu*g/m^{3})",
+  "pm10" = "PM[10]~(mu*g/m^{3})",
+  "pm25" = "PM[2.5]~(mu*g/m^{3})",
+  "so2" = "SO[2]~(mu*g/m^{3})"
+)
+
+p <- ggplot(data_plot, aes(x = month, y = conc)) +
+  facet_wrap(
+    ~cont,
+    scales = "free_y",
+    labeller = as_labeller(label_units, label_parsed)
+  ) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_line() +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Month", y = "") +
+  theme_bw()
+
+p
+```
+
+:::
+
+`r fig_nums("data_cont_na", "Time series of the missing pollution values in each day")`
+
+```{r fig.width = 8, fig.height = 6}
+#Missing exploration
+data_na <- data_cont |>
+  group_by(date) |>
+  summarise_at(vars(co:so2), ~ as.numeric(any(is.na(.)))) |>
+  pivot_longer(-date, names_to = "cont", values_to = "conc") |>
+  mutate(cont = toupper(cont))
+
+ggplot(data = data_na, aes(x = date, y = conc)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~cont)
+```
+
+`r fig_nums("corrmat_cont", "Correlation matrix of daily pollutant values")`
+
+```{r}
+data_cor <- data_cont |>
+  dplyr::select(codigopostal, date, co:so2) |>
+  group_by(date) |>
+  summarise(across(co:so2, mean))
+
+cor_matrix <- data_cor |>
+  select(-date) |>
+  cor(use = "pairwise.complete.obs", method = "spearman")
+
+library(corrplot)
+
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "lower",
+  addCoef.col = "black",
+  tl.col = "black",
+  tl.srt = 45,
+  col = colorRampPalette(c("#2C7BB6", "white", "#D7191C"))(200)
+)
+```
+
+## Meteorological variables
+
+`r fig_nums("data_meteo", "Time series of the meteorological variables daily or monthly averaged")`
+
+::: {.panel-tabset}
+
+### Daily mean
+
+```{r fig.width = 10, fig.height = 8}
+sdata_meteo <- data_meteo |>
+  as_tibble() |>
+  group_by(date) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  pivot_longer(
+    temperatura_maxima:temperatura_nit,
+    names_to = "meteo",
+    values_to = "value"
+  ) |>
+  mutate(
+    meteo = factor(
+      meteo,
+      levels = c(
+        "temperatura",
+        "temperatura_maxima",
+        "temperatura_nit",
+        "temperatura_dia",
+        "humitat_relativa",
+        "pressio_atmosferica"
+      ),
+      labels = c(
+        "Temperatura",
+        "Temperatura màxima",
+        "Temperatura nocturna",
+        "Temperatura diürna",
+        "Humitat relativa",
+        "Pressió atmosfèrica"
+      )
+    )
+  )
+
+df_scales <- data.frame(
+  ymin = c(rep(0, 4), rep(NA, 3)),
+  ymax = c(rep(40, 4), rep(NA, 3))
+) |>
+  mutate(id = row_number(), .before = "ymin")
+
+df_scales <- split(df_scales, df_scales$id)
+
+scales <- lapply(df_scales, function(x) {
+  scale_y_continuous(limits = c(x$ymin, x$ymax))
+})
+
+p <- ggplot(sdata_meteo, aes(x = date, y = value)) +
+  facet_wrap(~meteo, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Day", y = "Daily value") +
+  ggh4x::facetted_pos_scales(
+    y = scales
+  )
+
+p
+```
+
+### Monthly mean
+
+```{r fig.width = 10, fig.height = 8}
+sdata_meteo <- data_meteo |>
+  as_tibble() |>
+  mutate(
+    month = ymd(str_glue("{year(date)}-{month(date)}-01"))
+  ) |>
+  group_by(month) |>
+  summarise_if(is.numeric, ~ mean(., na.rm = TRUE)) |>
+  pivot_longer(
+    temperatura_maxima:temperatura_nit,
+    names_to = "meteo",
+    values_to = "value"
+  ) |>
+  mutate(
+    meteo = factor(
+      meteo,
+      levels = c(
+        "temperatura",
+        "temperatura_maxima",
+        "temperatura_nit",
+        "temperatura_dia",
+        "humitat_relativa",
+        "pressio_atmosferica"
+      ),
+      labels = c(
+        "Temperatura",
+        "Temperatura màxima",
+        "Temperatura nocturna",
+        "Temperatura diürna",
+        "Humitat relativa",
+        "Pressió atmosfèrica"
+      )
+    )
+  )
+
+df_scales <- data.frame(
+  ymin = c(rep(0, 4), rep(NA, 3)),
+  ymax = c(rep(40, 4), rep(NA, 3))
+) |>
+  mutate(id = row_number(), .before = "ymin")
+
+df_scales <- split(df_scales, df_scales$id)
+
+scales <- lapply(df_scales, function(x) {
+  scale_y_continuous(limits = c(x$ymin, x$ymax))
+})
+
+p <- ggplot(sdata_meteo, aes(x = month, y = value)) +
+  facet_wrap(~meteo, scales = "free_y") +
+  geom_line(alpha = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Month", y = "Monthly value") +
+  ggh4x::facetted_pos_scales(
+    y = scales
+  )
+
+p
+```
+
+:::
+
+
+# Analysis
+
+`r fig_nums("ts_analysis", "Time series of the ocurrence of arrhythmias, PM10 and PM2.5 for the patient 1230. In orange auricular arrhythmias and in red auricular+ventricular arrhythmias.")`
+
+```{r fig.width = 9, fig.height = 5}
+scase_data <- case_data |>
+  filter(patient_id == "1230")
+
+scase_data_ar <- scase_data |>
+  filter(y == 1) |>
+  mutate(
+    bg = case_when(
+      y_vent == 1 ~ 2,
+      y_auri == 1 ~ 7
+    )
+  )
+
+date_lab <- as.Date(str_glue("{2017:2023}-01-01"))
+
+layout(matrix(c(1, 1, 2:7), nrow = 4, byrow = TRUE))
+par(mar = c(2, 5, 1, 1))
+plot(
+  y ~ date,
+  data = scase_data,
+  type = "h",
+  lty = 2,
+  ylim = c(0, 2),
+  xaxt = "n",
+  yaxt = "n",
+  bty = "l",
+  xlab = "",
+  ylab = "Day with \narrhythmia",
+  mgp = c(2.2, 0.7, 0),
+  lab = c(5, 3, 7)
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+points(y ~ date, data = scase_data_ar, pch = 23, bg = scase_data_ar$bg)
+plot(
+  pm10 ~ date,
+  data = scase_data,
+  type = "l",
+  lty = 1,
+  bty = "l",
+  col = 4,
+  xlab = "",
+  ylab = "PM10"
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+plot(
+  pm25 ~ date,
+  data = scase_data,
+  type = "l",
+  lty = 1,
+  bty = "l",
+  col = 3,
+  xlab = "",
+  ylab = "PM2.5"
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+plot(
+  no2 ~ date,
+  data = scase_data,
+  type = "l",
+  lty = 1,
+  bty = "l",
+  col = 5,
+  xlab = "",
+  ylab = "NO2"
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+plot(
+  o3 ~ date,
+  data = scase_data,
+  type = "l",
+  lty = 1,
+  bty = "l",
+  col = 6,
+  xlab = "",
+  ylab = "O3"
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+plot(
+  so2 ~ date,
+  data = scase_data,
+  type = "l",
+  lty = 1,
+  bty = "l",
+  col = 7,
+  xlab = "",
+  ylab = "SO2"
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+plot(
+  co ~ date,
+  data = scase_data,
+  type = "l",
+  lty = 1,
+  bty = "l",
+  col = 8,
+  xlab = "",
+  ylab = "CO"
+)
+axis(1, date_lab, format(date_lab, "%Y"))
+par(mfrow = c(1, 1))
+```
+
+## Autocorrelation arrhythmias
+
+### One day separation (24h)
+
+`r fig_nums("ar_auri_acf", "Distribution of patient's auricular arrhythmias autocorrelation, by type")`
+
+```{r fig.width = 9}
+nplot <- tibble(
+  name = n_acf |> dplyr::select(starts_with("acf_auri")) |> names()
+) |>
+  filter(!grepl("48h", name)) |>
+  mutate(
+    plot = map(
+      name,
+      ~ {
+        d <- str_extract(., '\\d$')
+        ggplot(n_acf, aes(x = get(.))) +
+          geom_density(fill = "lightgrey") +
+          xlab(str_glue("Lag {d}")) +
+          ylab("") +
+          theme_bw()
+      }
+    )
+  )
+
+do.call(gridExtra::grid.arrange, c(nplot$plot, list(ncol = 3)))
+```
+
+`r fig_nums("ar_vent_acf", "Distribution of patient's ventricular arrhythmias autocorrelation, by type")`
+
+```{r fig.width = 9}
+nplot <- tibble(
+  name = n_acf |> dplyr::select(starts_with("acf_vent")) |> names()
+) |>
+  filter(!grepl("48h", name)) |>
+  mutate(
+    plot = map(
+      name,
+      ~ {
+        d <- str_extract(., '\\d$')
+        ggplot(n_acf, aes(x = get(.))) +
+          geom_density(fill = "lightgrey") +
+          xlab(str_glue("Lag {d}")) +
+          ylab("") +
+          theme_bw()
+      }
+    )
+  )
+
+do.call(gridExtra::grid.arrange, c(nplot$plot, list(ncol = 3)))
+```
+
+### Two days separation (48h)
+
+`r fig_nums("ar_auri_acf_48h", "Distribution of patient's auricular arrhythmias autocorrelation, by type")`
+
+```{r fig.width = 9}
+nplot <- tibble(
+  name = n_acf |> dplyr::select(starts_with("acf_auri")) |> names()
+) |>
+  filter(grepl("48h", name)) |>
+  mutate(
+    plot = map(
+      name,
+      ~ {
+        d <- str_extract(., '\\d$')
+        ggplot(n_acf, aes(x = get(.))) +
+          geom_density(fill = "lightgrey") +
+          xlab(str_glue("Lag {d}")) +
+          ylab("") +
+          theme_bw()
+      }
+    )
+  )
+
+do.call(gridExtra::grid.arrange, c(nplot$plot, list(ncol = 3)))
+```
+
+`r fig_nums("ar_vent_acf_48h", "Distribution of patient's ventricular arrhythmias autocorrelation, by type")`
+
+```{r fig.width = 9}
+nplot <- tibble(
+  name = n_acf |> dplyr::select(starts_with("acf_vent")) |> names()
+) |>
+  filter(grepl("48h", name)) |>
+  mutate(
+    plot = map(
+      name,
+      ~ {
+        d <- str_extract(., '\\d$')
+        ggplot(n_acf, aes(x = get(.))) +
+          geom_density(fill = "lightgrey") +
+          xlab(str_glue("Lag {d}")) +
+          ylab("") +
+          theme_bw()
+      }
+    )
+  )
+
+do.call(gridExtra::grid.arrange, c(nplot$plot, list(ncol = 3)))
+```
+
+<br>
+
+Models will be adjusted by relative humidity, atmospheric pressure and mean temperature.
+
+## Effect PM10
+
+### Auricular arrhythmias
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri))
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for PM10 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose for all variables a natural spline with 1 knot over 16 lags.
+
+`r tab_nums("pm10_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$pm10,
+  argvar = list(fun = "lin"),
+  lag = 16,
+  arglag = list(fun = "ns", knots = logknots(x = 16, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 16,
+  arglag = list(fun = "ns", knots = logknots(x = 16, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 16,
+  arglag = list(fun = "ns", knots = logknots(x = 16, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 16,
+  arglag = list(fun = "ns", knots = logknots(x = 16, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (PM10)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_pm10_auri", "PM10: Overall cumulative exposure-response for each value and lag-response for a 10 µgr/m3 increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "PM10",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_pm10_auri", "PM10: Lag-response effect for a 10 µgr/m3 increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Ventricular arrhythmias
+
+```{r}
+scase_data <- case_data
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(case_data$date)) / 365.25 * 8))
+btrend <- ns(case_data$date, knots = equalknots(case_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for PM10 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose for all variables a natural spline with 1 knot over 7 lags. We have to take 7 lags, otherwise we can't adjust for meteorological variables.
+
+`r tab_nums("pm10_aic_vent", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$pm10,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_vent ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (PM10)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_pm10_vent", "PM10: Overall cumulative exposure-response for each value and lag-response for a 10 µgr/m3 increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "PM10",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_pm10_vent", "PM10: Lag-response effect for a 10 µgr/m3 increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_vent", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_vent", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_vent", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_vent", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+## Effect PM2.5 
+
+### Auricular arrhythmias
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri))
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for PM2.5 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose for all variables a natural spline with 1 knot over 14 lags.
+
+`r tab_nums("pm25_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$pm25,
+  argvar = list(fun = "lin"),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (PM2.5)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_pm25_auri", "PM2.5: Overall cumulative exposure-response for each value and lag-response for a 10 µgr/m3 increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "PM2.5",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_pm25_auri", "PM2.5: Lag-response effect for a 10 µgr/m3 increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_pm25", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_pm25", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_pm25", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_pm25", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Ventricular arrhythmias
+
+```{r}
+scase_data <- case_data
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(case_data$date)) / 365.25 * 8))
+btrend <- ns(case_data$date, knots = equalknots(case_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for PM2.5 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose for all variables a natural spline with 1 knot over 10 lags.
+
+`r tab_nums("pm25_aic_vent", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$pm25,
+  argvar = list(fun = "lin"),
+  lag = 10,
+  arglag = list(fun = "ns", knots = logknots(x = 10, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 10,
+  arglag = list(fun = "ns", knots = logknots(x = 10, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 10,
+  arglag = list(fun = "ns", knots = logknots(x = 10, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 10,
+  arglag = list(fun = "ns", knots = logknots(x = 10, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_vent ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (PM2.5)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_pm25_vent", "PM2.5: Overall cumulative exposure-response for each value and lag-response for a 10 µgr/m3 increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "PM2.5",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_pm25_vent", "PM2.5: Lag-response effect for a 10 µgr/m3 increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_vent_pm25", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_vent_pm25", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_vent_pm25", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_vent_pm25", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+## Effect NO2
+
+### Auricular arrhythmias
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri))
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for NO2 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose for all variables a natural spline with 1 knot over 7 lags.
+
+`r tab_nums("no2_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$no2,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (NO2)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_no2_auri", "NO2: Overall cumulative exposure-response for each value and lag-response for a 10 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "NO2",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_no2_auri", "NO2: Lag-response effect for a 10 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_no2", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_no2", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_no2", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_no2", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Ventricular arrhythmias
+
+```{r}
+scase_data <- case_data
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(case_data$date)) / 365.25 * 8))
+btrend <- ns(case_data$date, knots = equalknots(case_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for NO2 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 3 equally spaced knots in the log scale for NO2 and 1 knot for the other meteorological variables, over 7 lags.
+
+`r tab_nums("no2_aic_vent", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$no2,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 3)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_vent ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (NO2)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+
+```
+
+`r fig_nums("crosspred_no2_vent", "NO2: Overall cumulative exposure-response for each value and lag-response for a 10 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "NO2",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_no2_vent", "NO2: Lag-response effect for a 10 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_vent_no2", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_vent_no2", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_vent_no2", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_vent_no2", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+## Effect O3
+
+### Auricular arrhythmias
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri))
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for O3 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 4 equally spaced knots in the log scale for O3 and 1 knot for the other meteorological variables, over 7 lags.
+
+`r tab_nums("o3_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$o3,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 4)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (O3)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_o3_auri", "O3: Overall cumulative exposure-response for each value and lag-response for a 10 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "O3",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_o3_auri", "O3: Lag-response effect for a 10 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_o3", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_o3", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_o3", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_o3", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Ventricular arrhythmias
+
+```{r}
+scase_data <- case_data
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(case_data$date)) / 365.25 * 8))
+btrend <- ns(case_data$date, knots = equalknots(case_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for O3 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 2 equally spaced knots in the log scale for O3 and 1 knot for the other meteorological variables, over 7 lags.
+
+`r tab_nums("o3_aic_vent", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$o3,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 2)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_vent ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (O3)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 80, by = 5), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_o3_vent", "O3: Overall cumulative exposure-response for each value and lag-response for a 10 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "O3",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 10,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_o3_vent", "O3: Lag-response effect for a 10 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["10"], pred_cont$matRRfit["10", ]),
+  RRlow = c(pred_cont$allRRlow["10"], pred_cont$matRRlow["10", ]),
+  RRhigh = c(pred_cont$allRRhigh["10"], pred_cont$matRRhigh["10", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_vent_o3", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_vent_o3", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_vent_o3", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_vent_o3", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+## Effect SO2
+
+### Auricular arrhythmias
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri))
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for SO2 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 1 knot for all variables over 7 lags.
+
+`r tab_nums("so2_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$so2,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (SO2)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 8, by = 1), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_so2_auri", "SO2: Overall cumulative exposure-response for each value and lag-response for a 1 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "SO2",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 1,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_so2_auri", "SO2: Lag-response effect for a 1 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["1"], pred_cont$matRRfit["1", ]),
+  RRlow = c(pred_cont$allRRlow["1"], pred_cont$matRRlow["1", ]),
+  RRhigh = c(pred_cont$allRRhigh["1"], pred_cont$matRRhigh["1", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_so2", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_so2", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_so2", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_so2", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Auricular arrhythmias (sensitivity)
+
+As a sensititivity analysis, we will exclude data previous to 2019 as the year 2018 contains many missings.
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri), year(date) > 2018)
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for SO2 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 1 knot for all variables over 7 lags.
+
+`r tab_nums("so2_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$so2,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (SO2)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 8, by = 1), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_so2_auri", "SO2: Overall cumulative exposure-response for each value and lag-response for a 1 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "SO2",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 1,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_so2_auri", "SO2: Lag-response effect for a 1 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["1"], pred_cont$matRRfit["1", ]),
+  RRlow = c(pred_cont$allRRlow["1"], pred_cont$matRRlow["1", ]),
+  RRhigh = c(pred_cont$allRRhigh["1"], pred_cont$matRRhigh["1", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_so2", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_so2", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_so2", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_so2", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Ventricular arrhythmias
+
+We have to exclude data previous to 2019 as the year 2018 contains many missings and otherwise models don't converge. 
+
+```{r}
+scase_data <- case_data |>
+  filter(year(date) > 2018)
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for SO2 and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables.  For the lag-response, we will choose a natural spline with 3 equally spaced knots in the log scale for SO2 and 1 knot for the other meteorological variables, over 7 lags. We have to take 7 lags otherwise we can't adjust for meteorological variables.
+
+`r tab_nums("so2_aic_vent", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$so2,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 3)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_vent ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity, atmospheric pressure and temperature as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_vent ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (SO2)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 8, by = 1), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+
+#Prediction effect (Temperature)
+predval <- quantile(scase_data$temperatura, probs = (1:99) / 100, na.rm = TRUE)
+pred_temp <- crosspred(cb_temp, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_temp$predvar[which.min(pred_temp$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_temp <- crosspred(cb_temp, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_so2_vent", "SO2: Overall cumulative exposure-response for each value and lag-response for a 1 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "SO2",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 1,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_so2_vent", "SO2: Lag-response effect for a 1 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["1"], pred_cont$matRRfit["1", ]),
+  RRlow = c(pred_cont$allRRlow["1"], pred_cont$matRRlow["1", ]),
+  RRhigh = c(pred_cont$allRRhigh["1"], pred_cont$matRRhigh["1", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_vent_so2", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_vent_so2", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_vent_so2", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_vent_so2", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_temp_vent_co", "Temperature: Overall cumulative exposure-response for each value and lag-response for a temperature, compared to the minimum risk temperature (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_temp,
+  "overall",
+  xlab = "Temperature",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_temp,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Temperature",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_temp_vent_co", "Temperature: Overall effect in function of the temperature, compared to a minimum risk temperature exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_temp$allRRfit))),
+  RRfit = pred_temp$allRRfit,
+  RRlow = pred_temp$allRRlow,
+  RRhigh = pred_temp$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+## Effect CO
+
+### Auricular arrhythmias
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri))
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for CO and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 1 knot for all variables over 14 lags.
+
+`r tab_nums("co_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$co,
+  argvar = list(fun = "lin"),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (CO)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 1.2, by = 0.1), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_co_auri", "CO: Overall cumulative exposure-response for each value and lag-response for a 0.2 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "CO",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 0.2,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_co_auri", "CO: Lag-response effect for a 0.2 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["0.2"], pred_cont$matRRfit["0.2", ]),
+  RRlow = c(pred_cont$allRRlow["0.2"], pred_cont$matRRlow["0.2", ]),
+  RRhigh = c(pred_cont$allRRhigh["0.2"], pred_cont$matRRhigh["0.2", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_co", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_co", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_co", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_co", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+### Auricular arrhythmias (sensitivity analysis)
+
+As a sensititivity analysis, we will exclude data previous to 2019 as the year 2018 contains many missings.
+
+```{r}
+scase_data <- case_data |>
+  filter(!is.na(y_auri), year(date) > 2018)
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for CO and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 1 knot for all variables over 14 lags.
+
+`r tab_nums("co_aic_auri", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$co,
+  argvar = list(fun = "lin"),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 14,
+  arglag = list(fun = "ns", knots = logknots(x = 14, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_auri ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_auri ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod2 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod3 <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + cb_temp + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, mod2, mod3)
+) |>
+  mutate(
+    aic = map_dbl(mod, ~ .$aic)
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the model adjusted by relative humidity and atmospheric pressure as it has the lowest AIC.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_auri ~ cb_cont + cb_rh + cb_pres + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (CO)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 1.2, by = 0.1), cen = 0)
+
+#Prediction effect (Relative humidity)
+predval <- quantile(
+  scase_data$humitat_relativa,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_rh <- crosspred(cb_rh, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_rh$predvar[which.min(pred_rh$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_rh <- crosspred(cb_rh, mod, at = predval, cen = minrr)
+
+#Prediction effect (Atmospheric pressure)
+predval <- quantile(
+  scase_data$pressio_atmosferica,
+  probs = (1:99) / 100,
+  na.rm = TRUE
+)
+pred_pres <- crosspred(cb_pres, mod, at = predval)
+
+#Minimum RR point
+minrr <- pred_pres$predvar[which.min(pred_pres$allRRfit)]
+
+#Prediction effect centered at the minimum RR point
+pred_pres <- crosspred(cb_pres, mod, at = predval, cen = minrr)
+```
+
+`r fig_nums("crosspred_co_auri", "CO: Overall cumulative exposure-response for each value and lag-response for a 0.2 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "CO",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 0.2,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_co_auri", "CO: Lag-response effect for a 0.2 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["0.2"], pred_cont$matRRfit["0.2", ]),
+  RRlow = c(pred_cont$allRRlow["0.2"], pred_cont$matRRlow["0.2", ]),
+  RRhigh = c(pred_cont$allRRhigh["0.2"], pred_cont$matRRhigh["0.2", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
+
+`r fig_nums("crosspred_rhel_auri_co", "Relative humidity: Overall cumulative exposure-response for each value and lag-response for a relative humidity, compared to the minimum relative humidity (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_rh,
+  "overall",
+  xlab = "Relative humidity",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_rh,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Relative humidity",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_rhum_auri_co", "Relative humidity: Overall effect in function of the relative humidity, compared to a minimum relative humidity exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_rh$allRRfit))),
+  RRfit = pred_rh$allRRfit,
+  RRlow = pred_rh$allRRlow,
+  RRhigh = pred_rh$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+`r fig_nums("crosspred_apres_auri_co", "Atmospheric pressure: Overall cumulative exposure-response for each value and lag-response for an atmospheric pressure, compared to the minimum atmospheric pressure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_pres,
+  "overall",
+  xlab = "Atmospheric pressure",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_pres,
+  zlab = "OR",
+  col = 4,
+  lphi = 60,
+  cex.axis = 0.8,
+  xlab = "Atmospheric pressure",
+  main = "Exposure-lag-response"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_apres_auri_co", "Atmospheric pressure: Overall effect in function of the atmospheric pressure, compared to a minimum atmospheric pressure exposure.")`
+
+```{r}
+tibble(
+  temp = round(as.numeric(names(pred_pres$allRRfit))),
+  RRfit = pred_pres$allRRfit,
+  RRlow = pred_pres$allRRlow,
+  RRhigh = pred_pres$allRRhigh
+) |>
+  group_by(temp) |>
+  summarise(
+    RRtext = first(str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    ))
+  ) |>
+  pivot_wider(names_from = temp, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE)
+```
+
+
+### Ventricular arrhythmias
+
+```{r}
+scase_data <- case_data
+
+#8 degrees of freedom per year (seasonality), and subject/year/month strata indicators (individual variation)
+dftrend <- round(as.numeric(diff(range(scase_data$date)) / 365.25 * 8))
+btrend <- ns(scase_data$date, knots = equalknots(scase_data$date, dftrend - 1))
+```
+
+For the exposure response, we will choose a linear model for CO and a natural spline with 3 internal knots at the 10th, 75th and 90th percentiles for the meteorological variables. For the lag-response, we will choose a natural spline with 1 knot for all variables over 7 lags.
+
+`r tab_nums("co_aic_vent", "AIC of the different models adjusted with more meteorological variables")`
+
+```{r}
+cb_cont <- crossbasis(
+  scase_data$co,
+  argvar = list(fun = "lin"),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_rh <- crossbasis(
+  scase_data$humitat_relativa,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$humitat_relativa,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_pres <- crossbasis(
+  scase_data$pressio_atmosferica,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$pressio_atmosferica,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+cb_temp <- crossbasis(
+  scase_data$temperatura,
+  argvar = list(
+    fun = "ns",
+    knots = quantile(
+      scase_data$temperatura,
+      probs = c(0.1, 0.75, 0.9),
+      na.rm = T
+    ),
+    int = F
+  ),
+  lag = 7,
+  arglag = list(fun = "ns", knots = logknots(x = 7, nk = 1)),
+  group = scase_data$patient_id
+)
+
+mod0 <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+mod1 <- gnm(
+  y_vent ~ cb_cont + cb_rh + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+tibble(
+  name = c(
+    "Contamination",
+    "+ Relative humidity",
+    "+ Atmospheric pressure",
+    "+ Temperature"
+  ),
+  mod = list(mod0, mod1, NULL, NULL)
+) |>
+  mutate(
+    aic = map(
+      mod,
+      ~ {
+        if (!is.null(.)) {
+          .$aic
+        } else {
+          "Don't converge"
+        }
+      }
+    )
+  ) |>
+  dplyr::select(name, aic) |>
+  gt() |>
+  cols_label(
+    name ~ "Model",
+    aic ~ "AIC"
+  ) |>
+  cols_align(
+    "center",
+    columns = "aic"
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(10)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Relative humidity"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(20)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Atmospheric pressure"
+    )
+  ) |>
+  tab_style(
+    style = cell_text(align = "left", indent = px(30)),
+    locations = cells_body(
+      columns = name,
+      rows = name == "+ Temperature"
+    )
+  )
+```
+
+We will choose the raw model only with the contamination effect.
+
+```{r}
+#Fit model
+mod <- gnm(
+  y_vent ~ cb_cont + btrend + dow + fest,
+  eliminate = strata,
+  data = scase_data,
+  family = binomial
+)
+
+#Prediction effect (CO)
+pred_cont <- crosspred(cb_cont, mod, at = seq(0, 1.2, by = 0.1), cen = 0)
+
+```
+
+`r fig_nums("crosspred_co_vent", "CO: Overall cumulative exposure-response for each value and lag-response for a 0.2 ppb increase, compared to a 0 exposure (y-axis is presented in logarithmic scale).")`
+
+```{r fig.width = 9}
+layout(matrix(c(1, 2), 1, 2, byrow = TRUE))
+
+plot(
+  pred_cont,
+  "overall",
+  xlab = "CO",
+  ylab = "OR",
+  col = 4,
+  main = "Overall",
+  log = "y"
+)
+
+plot(
+  pred_cont,
+  var = 0.2,
+  ci = "b",
+  type = "p",
+  ylab = "OR",
+  col = 4,
+  pch = 19,
+  cex = 1.7,
+  xlab = "Lag",
+  main = "Lag-response",
+  lab = c(3, 5, 7),
+  log = "y"
+)
+par(mfrow = c(1, 1))
+```
+
+`r tab_nums("tbl_crosspred_co_vent", "CO: Lag-response effect for a 0.2 ppb increase, compared to a 0 exposure.")`
+
+```{r}
+tibble(
+  RRfit = c(pred_cont$allRRfit["0.2"], pred_cont$matRRfit["0.2", ]),
+  RRlow = c(pred_cont$allRRlow["0.2"], pred_cont$matRRlow["0.2", ]),
+  RRhigh = c(pred_cont$allRRhigh["0.2"], pred_cont$matRRhigh["0.2", ])
+) |>
+  mutate(
+    lag = c("Overall", 1:ncol(pred_cont$matRRfit) - 1),
+    RRtext = str_glue(
+      "{round(RRfit, 3)} [{round(RRlow, 3)}, {round(RRhigh, 3)}]"
+    )
+  ) |>
+  dplyr::select(lag, RRtext) |>
+  pivot_wider(names_from = lag, values_from = RRtext) |>
+  mutate(rowname = "OR [CI95%]") |>
+  tibble::column_to_rownames("rowname") |>
+  gt(rownames_to_stub = TRUE) |>
+  tab_style(
+    style = list(
+      cell_borders(
+        sides = c("right"),
+        color = "lightgrey",
+        weight = px(2)
+      )
+    ),
+    locations = list(
+      cells_body(
+        columns = "Overall"
+      )
+    )
+  )
+```
