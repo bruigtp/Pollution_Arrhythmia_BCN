@@ -163,11 +163,10 @@ data_auri <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_auri <- glm(
-  n ~ 1 + zbe,
-  offset = t_fup,
+mod_auri <-  lme4::glmer(
+  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
   data = data_auri,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 
@@ -207,11 +206,10 @@ data_vent <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_vent <- glm(
-  n ~ 1 + zbe,
-  offset = t_fup,
+mod_vent <- lme4::glmer(
+  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
   data = data_vent,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 cbind(
@@ -380,11 +378,10 @@ data_auri <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_auri <- glm(
-  n ~ 1 + factor(year),
-  offset = t_fup,
+mod_auri <- lme4::glmer(
+  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
   data = data_auri,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 pred_auri <- ggpredict(mod_auri, c("year"), condition = c("t_fup" = log(100)))
@@ -398,11 +395,10 @@ data_vent <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_vent <- glm(
-  n ~ 1 + factor(year),
-  offset = t_fup,
+mod_vent <- lme4::glmer(
+  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
   data = data_vent,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 pred_vent <- ggpredict(mod_vent, c("year"), condition = c("t_fup" = log(100)))
@@ -649,11 +645,10 @@ data_auri <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_auri <- glm(
-  n ~ 1 + zbe,
-  offset = t_fup,
+mod_auri <- lme4::glmer(
+  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
   data = data_auri,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 
@@ -697,11 +692,10 @@ data_vent <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_vent <- glm(
-  n ~ 1 + zbe,
-  offset = t_fup,
+mod_vent <- lme4::glmer(
+  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
   data = data_vent,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 cbind(
@@ -870,11 +864,10 @@ data_auri <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_auri <- glm(
-  n ~ 1 + factor(year),
-  offset = t_fup,
+mod_auri <- lme4::glmer(
+  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
   data = data_auri,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 pred_auri <- ggpredict(mod_auri, c("year"), condition = c("t_fup" = log(100)))
@@ -888,11 +881,10 @@ data_vent <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_vent <- glm(
-  n ~ 1 + factor(year),
-  offset = t_fup,
+mod_vent <- lme4::glmer(
+  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
   data = data_vent,
-  family = "poisson"
+  family = poisson(link = "log")
 )
 
 pred_vent <- ggpredict(mod_vent, c("year"), condition = c("t_fup" = log(100)))
