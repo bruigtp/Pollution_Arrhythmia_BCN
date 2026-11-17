@@ -5,6 +5,37 @@ format: html
 
 Data is not available due to privacy restrictions. Below is the code used for the analysis of the impact of LEZ on contaminants and arrhythmia incidence time series.
 
+```{r}
+#Load libraries:
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(purrr)
+library(stringr)
+library(captioner)
+library(lme4)
+library(sjPlot)
+library(ggplot2)
+library(gtsummary)
+library(gt)
+library(flowchart)
+library(lubridate)
+library(plotly)
+library(dlnm)
+library(gnm)
+library(splines)
+library(ggh4x)
+library(strucchange)
+library(prais)
+library(imputeTS)
+library(ggeffects)
+library(patchwork)
+#Enumerate tables and figures
+fig_nums <- captioner(prefix = 'Figura')
+tab_nums <- captioner(prefix = 'Tabla')
+```
+
 # Analysis of the Impact Low Emission Zone (LEZ)
 
 The LEZ was implanted on 01-01-2020. 
@@ -100,7 +131,95 @@ case_data |>
 
 ```
 
-`r tab_nums("poisson_model_zbe", "Incidence rate ratio (IRR) of the implementation of the ZBE, estimated by a Poisson regression model")`
+```{r}
+# #Auricular arrhythmias
+# tbl_auri_pre <- case_data |>
+#   filter(y_auri == 1, date < ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_1)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# tbl_auri_post <- case_data |>
+#   filter(y_auri == 1, date >= ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_2)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# #Ventricular arrhythmias
+# tbl_vent_pre <- case_data |>
+#   filter(y_vent == 1, date < ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_1)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# tbl_vent_post <- case_data |>
+#   filter(y_vent == 1, date >= ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_2)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# cbind(
+#   rbind(tbl_auri_pre, tbl_auri_post),
+#   rbind(tbl_vent_pre, tbl_vent_post)
+# ) |>
+#   janitor::clean_names() |>
+#   mutate(across(where(is.numeric), ~round(., 2))) |>
+#   mutate(period = c("Pre ZBE", "Post ZBE"), .before = n) |>
+#   gt::gt() |>
+#   gt::tab_spanner(
+#     label = "Auricular arrhythmias",
+#     columns = c(n, t_fup, ir)
+#   ) |>
+#   gt::tab_spanner(
+#     label = "Ventricular arrhythmias",
+#     columns = c(n_2, t_fup_2, ir_2)
+#   ) |>
+#   gt::cols_label(
+#     period ~ "Period",
+#     starts_with("n") ~ "Nº events",
+#     starts_with("t_fup") ~ "Patients-year",
+#     starts_with("ir") ~ "Incidence Rate"
+#   ) |>
+#   gt::cols_align("center") |>
+#   gt::tab_footnote(
+#     footnote = "Rate for 1 patient-year",
+#     locations = cells_column_labels(column = starts_with("ir"))
+#   )
+```
+
+`r tab_nums("poisson_model_zbe", "Incidence rate ratio (IRR) of the implementation of the ZBE, estimated by a Negative bionmial regression model")`
 
 ```{r}
 data_fup <- data_clinic |>
@@ -163,12 +282,18 @@ data_auri <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_auri <-  lme4::glmer(
-  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
+# mod_auri <- glmer(
+#   n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
+#   data = data_auri,
+#   family = "poisson"
+# )
+mod_auri <- MASS::glmmPQL(
+  fixed = n ~ zbe + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_auri,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
-
 
 #Ventricular arrhythmias
 data_vent_pre <- case_data |>
@@ -206,52 +331,93 @@ data_vent <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_vent <- lme4::glmer(
-  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
+# mod_vent <- glm(
+#   n ~ 1 + zbe,
+#   offset = t_fup,
+#   data = data_vent,
+#   family = "poisson"
+# )
+mod_vent <- MASS::glmmPQL(
+  fixed = n ~ zbe + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_vent,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
 
-cbind(
-  broom::tidy(mod_auri, exponentiate = TRUE, conf.int = TRUE),
-  broom::tidy(mod_vent, exponentiate = TRUE, conf.int = TRUE)
+
+# Extract IRRs, confidence intervals and p-values
+tidy_quasi <- function(model) {
+
+  coefs <- summary(model)$tTable
+
+  tibble(
+    term = rownames(coefs),
+    estimate = exp(coefs[, "Value"]),
+    conf_low = exp(
+      coefs[, "Value"] -
+        qt(0.975, df = coefs[, "DF"]) * coefs[, "Std.Error"]
+    ),
+    conf_high = exp(
+      coefs[, "Value"] +
+        qt(0.975, df = coefs[, "DF"]) * coefs[, "Std.Error"]
+    ),
+    p_value = coefs[, "p-value"]
+  )
+}
+
+# Create table
+bind_cols(
+  tidy_quasi(mod_auri),
+  tidy_quasi(mod_vent) |>
+    select(-term) |>
+    rename_with(~ paste0(.x, "_2"))
 ) |>
-  janitor::clean_names() |>
-  mutate(across(
-    c(starts_with("estimate"), starts_with("conf_")),
-    ~ round(., 2)
-  )) |>
+  filter(term != "(Intercept)") |>
   mutate(
-    text = str_glue("{estimate} [{conf_low} - {conf_high}]"),
-    text_2 = str_glue("{estimate_2} [{conf_low_2} - {conf_high_2}]"),
+    across(
+      c(estimate, conf_low, conf_high,
+        estimate_2, conf_low_2, conf_high_2),
+      ~ round(.x, 2)
+    ),
+    text = str_glue(
+      "{estimate} [{conf_low} - {conf_high}]"
+    ),
+    text_2 = str_glue(
+      "{estimate_2} [{conf_low_2} - {conf_high_2}]"
+    ),
     p_value = case_when(
       p_value < 0.001 ~ "<0.001",
-      .default = as.character(round(p_value, 3))
+      TRUE ~ sprintf("%.3f", p_value)
     ),
     p_value_2 = case_when(
       p_value_2 < 0.001 ~ "<0.001",
-      .default = as.character(round(p_value_2, 3))
+      TRUE ~ sprintf("%.3f", p_value_2)
     )
   ) |>
-  filter(term != "(Intercept)") |>
-  dplyr::select(text, p_value, text_2, p_value_2) |>
-  gt::gt() |>
-  gt::cols_label(
-    contains("text") ~ "IRR [CI95%]",
-    contains("p_value") ~ "P.Value"
+  select(text, p_value, text_2, p_value_2) |>
+  gt() |>
+  cols_label(
+    text = "IRR [95% CI]",
+    p_value = "P-value",
+    text_2 = "IRR [95% CI]",
+    p_value_2 = "P-value"
   ) |>
-  gt::cols_align("center") |>
-  gt::tab_spanner(
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  tab_spanner(
     label = "Auricular arrhythmias",
     columns = c(text, p_value)
   ) |>
-  gt::tab_spanner(
+  tab_spanner(
     label = "Ventricular arrhythmias",
     columns = c(text_2, p_value_2)
   )
 ```
 
-`r tab_nums("poisson_rates_zbe", "Arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous poisson regression model")`
+`r tab_nums("poisson_rates_zbe", "Arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous Negative Binomial regression model")`
 
 ```{r}
 pred_auri <- ggpredict(mod_auri, c("zbe"), condition = c("t_fup" = log(100)))
@@ -296,7 +462,7 @@ cbind(
   )
 ```
 
-`r fig_nums("poisson_rates_zbe_fig", "Plot of the arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous poisson regression model")`
+`r fig_nums("poisson_rates_zbe_fig", "Plot of the arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous Negative Binomial regression model")`
 
 ```{r}
 p1 <- plot(
@@ -319,7 +485,7 @@ p2 <- plot(
 p1 + p2
 ```
 
-`r tab_nums("poisson_rates_year", "Arrhythmias incidence rate per year, predicted by a poisson regression model")`
+`r tab_nums("poisson_rates_year", "Arrhythmias incidence rate per year, predicted by a Negative Binomial regression model")`
 
 ```{r}
 ndata_year <- tibble(
@@ -378,10 +544,18 @@ data_auri <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_auri <- lme4::glmer(
-  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
+# mod_auri <- glm(
+#   n ~ 1 + factor(year),
+#   offset = t_fup,
+#   data = data_auri,
+#   family = "poisson"
+# )
+mod_auri <- MASS::glmmPQL(
+  fixed = n ~ factor(year) + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_auri,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
 
 pred_auri <- ggpredict(mod_auri, c("year"), condition = c("t_fup" = log(100)))
@@ -395,10 +569,18 @@ data_vent <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_vent <- lme4::glmer(
-  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
+# mod_vent <- glm(
+#   n ~ 1 + factor(year),
+#   offset = t_fup,
+#   data = data_vent,
+#   family = "poisson"
+# )
+mod_vent <- MASS::glmmPQL(
+  fixed = n ~ factor(year) + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_vent,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
 
 pred_vent <- ggpredict(mod_vent, c("year"), condition = c("t_fup" = log(100)))
@@ -439,7 +621,7 @@ cbind(
   )
 ```
 
-`r fig_nums("poisson_rates_year_fig", "Plot of the arrhythmias incidence rate per year, predicted by a poisson regression model")`
+`r fig_nums("poisson_rates_year_fig", "Plot of the arrhythmias incidence rate per year, predicted by a Negative Binomial regression model")`
 
 ```{r}
 p1 <- plot(
@@ -467,6 +649,7 @@ p1 + p2
 As a sensitivity analysis, we will replicate the analysis but excluding the COVID-19 lockdown period: March-May 2020.
 
 `r tab_nums("counts_zbe_ld", "Number of patients with none, 1 or more arrhythmias previous and after the implementation of the ZBE (01-01-2020)")`
+
 ```{r}
 case_data |>
   filter(date > ymd("2020-05-31") | date < ymd("2020-03-01")) |>
@@ -568,7 +751,95 @@ case_data |>
 
 ```
 
-`r tab_nums("poisson_model_zbe_ld", "Incidence rate ratio (IRR) of the implementation of the ZBE, estimated by a Poisson regression model")`
+```{r}
+# #Auricular arrhythmias
+# tbl_auri_pre <- case_data |>
+#   filter(y_auri == 1, date < ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_1)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# tbl_auri_post <- case_data |>
+#   filter(y_auri == 1, date >= ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_2)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# #Ventricular arrhythmias
+# tbl_vent_pre <- case_data |>
+#   filter(y_vent == 1, date < ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_1)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# tbl_vent_post <- case_data |>
+#   filter(y_vent == 1, date >= ymd("2020-01-01")) |>
+#   count(patient_id) |>
+#   #Sobre tota la població!! A case data només tenim els casos
+#   right_join(data_fup, by = "patient_id") |>
+#   mutate(n = case_when(is.na(n) ~ 0, .default = n)) |>
+#   summarise(
+#     n = sum(n),
+#     t_fup = sum(t_fup_2)
+#   ) |>
+#   mutate(
+#     ir = n/t_fup
+#   )
+#
+# cbind(
+#   rbind(tbl_auri_pre, tbl_auri_post),
+#   rbind(tbl_vent_pre, tbl_vent_post)
+# ) |>
+#   janitor::clean_names() |>
+#   mutate(across(where(is.numeric), ~round(., 2))) |>
+#   mutate(period = c("Pre ZBE", "Post ZBE"), .before = n) |>
+#   gt::gt() |>
+#   gt::tab_spanner(
+#     label = "Auricular arrhythmias",
+#     columns = c(n, t_fup, ir)
+#   ) |>
+#   gt::tab_spanner(
+#     label = "Ventricular arrhythmias",
+#     columns = c(n_2, t_fup_2, ir_2)
+#   ) |>
+#   gt::cols_label(
+#     period ~ "Period",
+#     starts_with("n") ~ "Nº events",
+#     starts_with("t_fup") ~ "Patients-year",
+#     starts_with("ir") ~ "Incidence Rate"
+#   ) |>
+#   gt::cols_align("center") |>
+#   gt::tab_footnote(
+#     footnote = "Rate for 1 patient-year",
+#     locations = cells_column_labels(column = starts_with("ir"))
+#   )
+```
+
+`r tab_nums("poisson_model_zbe_ld", "Incidence rate ratio (IRR) of the implementation of the ZBE, estimated by a Negative Binomial regression model")`
 
 ```{r}
 data_fup <- data_clinic |>
@@ -645,12 +916,19 @@ data_auri <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_auri <- lme4::glmer(
-  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
+# mod_auri <- glm(
+#   n ~ 1 + zbe,
+#   offset = t_fup,
+#   data = data_auri,
+#   family = "poisson"
+# )
+mod_auri <- MASS::glmmPQL(
+  fixed = n ~ zbe + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_auri,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
-
 
 #Ventricular arrhythmias
 data_vent_pre <- case_data |>
@@ -692,52 +970,73 @@ data_vent <- rbind(
     t_fup = log(t_fup)
   )
 
-mod_vent <- lme4::glmer(
-  n ~ 1 + zbe + (1 | patient_id) + offset(t_fup),
+# mod_vent <- glm(
+#   n ~ 1 + zbe,
+#   offset = t_fup,
+#   data = data_vent,
+#   family = "poisson"
+# )
+mod_vent <- MASS::glmmPQL(
+  fixed = n ~ zbe + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_vent,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
 
-cbind(
-  broom::tidy(mod_auri, exponentiate = TRUE, conf.int = TRUE),
-  broom::tidy(mod_vent, exponentiate = TRUE, conf.int = TRUE)
+
+# Create table
+bind_cols(
+  tidy_quasi(mod_auri),
+  tidy_quasi(mod_vent) |>
+    select(-term) |>
+    rename_with(~ paste0(.x, "_2"))
 ) |>
-  janitor::clean_names() |>
-  mutate(across(
-    c(starts_with("estimate"), starts_with("conf_")),
-    ~ round(., 2)
-  )) |>
+  filter(term != "(Intercept)") |>
   mutate(
-    text = str_glue("{estimate} [{conf_low} - {conf_high}]"),
-    text_2 = str_glue("{estimate_2} [{conf_low_2} - {conf_high_2}]"),
+    across(
+      c(estimate, conf_low, conf_high,
+        estimate_2, conf_low_2, conf_high_2),
+      ~ round(.x, 2)
+    ),
+    text = str_glue(
+      "{estimate} [{conf_low} - {conf_high}]"
+    ),
+    text_2 = str_glue(
+      "{estimate_2} [{conf_low_2} - {conf_high_2}]"
+    ),
     p_value = case_when(
       p_value < 0.001 ~ "<0.001",
-      .default = as.character(round(p_value, 3))
+      TRUE ~ sprintf("%.3f", p_value)
     ),
     p_value_2 = case_when(
       p_value_2 < 0.001 ~ "<0.001",
-      .default = as.character(round(p_value_2, 3))
+      TRUE ~ sprintf("%.3f", p_value_2)
     )
   ) |>
-  filter(term != "(Intercept)") |>
-  dplyr::select(text, p_value, text_2, p_value_2) |>
-  gt::gt() |>
-  gt::cols_label(
-    contains("text") ~ "IRR [CI95%]",
-    contains("p_value") ~ "P.Value"
+  select(text, p_value, text_2, p_value_2) |>
+  gt() |>
+  cols_label(
+    text = "IRR [95% CI]",
+    p_value = "P-value",
+    text_2 = "IRR [95% CI]",
+    p_value_2 = "P-value"
   ) |>
-  gt::cols_align("center") |>
-  gt::tab_spanner(
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  tab_spanner(
     label = "Auricular arrhythmias",
     columns = c(text, p_value)
   ) |>
-  gt::tab_spanner(
+  tab_spanner(
     label = "Ventricular arrhythmias",
     columns = c(text_2, p_value_2)
   )
 ```
 
-`r tab_nums("poisson_rates_zbe_ld", "Arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous poisson regression model")`
+`r tab_nums("poisson_rates_zbe_ld", "Arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous Negative Binomial regression model")`
 
 ```{r}
 pred_auri <- ggpredict(mod_auri, c("zbe"), condition = c("t_fup" = log(100)))
@@ -782,7 +1081,7 @@ cbind(
   )
 ```
 
-`r fig_nums("poisson_rates_zbe_fig_ld", "Plot of the arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous poisson regression model")`
+`r fig_nums("poisson_rates_zbe_fig_ld", "Plot of the arrhythmias incidence rate previous and after the implementation of the ZBE (01-01-2020), predicted by the previous Negative Binomial regression model")`
 
 ```{r}
 p1 <- plot(
@@ -805,7 +1104,7 @@ p2 <- plot(
 p1 + p2
 ```
 
-`r tab_nums("poisson_rates_year_ld", "Arrhythmias incidence rate per year, predicted by a poisson regression model")`
+`r tab_nums("poisson_rates_year_ld", "Arrhythmias incidence rate per year, predicted by a Negative Binomial regression model")`
 
 ```{r}
 ndata_year <- tibble(
@@ -864,10 +1163,18 @@ data_auri <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_auri <- lme4::glmer(
-  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
+# mod_auri <- glm(
+#   n ~ 1 + factor(year),
+#   offset = t_fup,
+#   data = data_auri,
+#   family = "poisson"
+# )
+mod_auri <- MASS::glmmPQL(
+  fixed = n ~ factor(year) + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_auri,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
 
 pred_auri <- ggpredict(mod_auri, c("year"), condition = c("t_fup" = log(100)))
@@ -881,10 +1188,18 @@ data_vent <- ndata_year |>
   dplyr::select(year, patient_id, n, t_fup) |>
   mutate(t_fup = log(t_fup))
 
-mod_vent <- lme4::glmer(
-  n ~ 1 + factor(year) + (1 | patient_id) + offset(t_fup),
+# mod_vent <- glm(
+#   n ~ 1 + factor(year),
+#   offset = t_fup,
+#   data = data_vent,
+#   family = "poisson"
+# )
+mod_vent <- MASS::glmmPQL(
+  fixed = n ~ factor(year) + offset(t_fup),
+  random = ~ 1 | patient_id,
+  family = quasipoisson(link = "log"),
   data = data_vent,
-  family = poisson(link = "log")
+  verbose = FALSE
 )
 
 pred_vent <- ggpredict(mod_vent, c("year"), condition = c("t_fup" = log(100)))
@@ -925,7 +1240,7 @@ cbind(
   )
 ```
 
-`r fig_nums("poisson_rates_year_fig_ld", "Plot of the arrhythmias incidence rate per year, predicted by a poisson regression model")`
+`r fig_nums("poisson_rates_year_fig_ld", "Plot of the arrhythmias incidence rate per year, predicted by a Negative Binomial regression model")`
 
 ```{r}
 p1 <- plot(
@@ -951,162 +1266,7 @@ p1 + p2
 
 ## To air pollution
 
-We considered the mean of the daily, weekly and monthly values associated with each of the Barcelona postal codes of the patients included in the analysis.
-
-::: {.panel-tabset}
-
-### Daily
-
-```{r}
-#| include: false
-
-sdata_cont <- data_cont |>
-  dplyr::select(date, co:so2) |>
-  group_by(date) |>
-  summarise_all(mean) |>
-  mutate(
-    time = row_number(),
-    zbe = case_when(
-      date >= ymd("2020-01-01") ~ 1,
-      .default = 0
-    )
-  ) |>
-  ungroup() |>
-  group_by(zbe) |>
-  mutate(
-    time_zbe = row_number(),
-    time_zbe = case_when(
-      zbe == 0 ~ 0,
-      .default = time_zbe
-    )
-  ) |>
-  ungroup()
-
-data_zbe <- tibble(cont = sdata_cont |> dplyr::select(co:so2) |> names()) |>
-  mutate(
-    df = map(
-      cont,
-      ~ {
-        if (. %in% c("co", "so2")) {
-          df <- sdata_cont |>
-            filter(year(date) > 2018)
-        } else {
-          df <- sdata_cont
-        }
-        df[[.]] <- na_interpolation(df[[.]], option = "spline")
-        df
-      }
-    ),
-    mod = map2(
-      cont,
-      df,
-      ~ prais::prais_winsten(
-        as.formula(str_glue("{..1} ~ time + zbe + time_zbe")),
-        index = 'time',
-        data = ..2
-      )
-    ),
-    df_pred = map2(
-      df,
-      mod,
-      ~ {
-        ..1 |>
-          mutate(
-            factual_trend = ..2$coefficients[1] +
-              ..2$coefficients[2] * time +
-              ..2$coefficients[3] * zbe +
-              ..2$coefficients[4] * time_zbe,
-            factual_trend = case_when(
-              date < ymd("2020-01-01") ~ NA,
-              .default = factual_trend
-            ),
-            counter_fact = ..2$coefficients[1] + ..2$coefficients[2] * time
-          )
-      }
-    )
-  )
-```
-
-`r tab_nums("zbe_test", "Models to assess if there is a structural change in the trend of time series of contaminants previous and after the day of implementation of the LEZ")`
-
-```{r results = 'asis'}
-ntaula <- map2(
-  data_zbe$mod,
-  data_zbe$cont,
-  ~ summary(..1)$coefficients |>
-    as.data.frame() |>
-    tibble::rownames_to_column() |>
-    dplyr::select(
-      "Coefficient" = "rowname",
-      "Estimate",
-      "P-Value" = "Pr(>|t|)"
-    ) |>
-    mutate(
-      Coefficient = case_when(
-        Coefficient == "time" ~ "Trend (pre-LEZ)",
-        Coefficient == "zbe" ~ "LEZ Intervention",
-        Coefficient == "time_zbe" ~ "Trend (post-LEZ)",
-        .default = Coefficient
-      ),
-      Estimate = round(Estimate, 3),
-      `P-Value` = case_when(
-        `P-Value` < 0.001 ~ "<0.001",
-        .default = as.character(round(`P-Value`, 3))
-      )
-    ) |>
-    gt(caption = toupper(..2))
-)
-
-for (taula in ntaula) {
-  print(taula)
-  cat("\n\n")
-}
-```
-
-`r fig_nums("data_cont_zbe", "Time series of the pollution values daily averaged, with the line indicating the implementation of LEZ and a line for the trend before the implementation and a line after the implementation.")`
-
-```{r fig.width = 10, fig.height = 8}
-data_zbe <- data_zbe |>
-  mutate(
-    plot = map2(
-      df_pred,
-      cont,
-      ~ {
-        ggplot(data = ..1, aes(x = date)) +
-          geom_line(aes(y = get(..2)), alpha = 0.3) +
-          geom_line(
-            aes(y = factual_trend),
-            linetype = "dashed",
-            color = "blue",
-            lwd = 0.9
-          ) +
-          geom_line(
-            aes(y = counter_fact),
-            linetype = "dashed",
-            color = "darkorange",
-            lwd = 0.9
-          ) +
-          geom_vline(
-            xintercept = ymd("2020-01-01"),
-            color = "red",
-            linetype = "dashed"
-          ) +
-          scale_x_date(
-            date_breaks = "1 year",
-            date_labels = "%Y",
-            name = "Date",
-            limits = c(ymd("2017-01-01"), ymd("2022-12-31"))
-          ) +
-          ylab(toupper(..2)) +
-          theme_bw()
-      }
-    )
-  )
-
-do.call(gridExtra::grid.arrange, c(data_zbe$plot, list(ncol = 3)))
-```
-
-### Weekly
+We considered the mean of the weekly values associated with each of the Barcelona postal codes of the patients included in the analysis.
 
 ```{r}
 #| include: false
@@ -1164,11 +1324,21 @@ data_zbe <- tibble(cont = sdata_cont |> dplyr::select(co:so2) |> names()) |>
         df
       }
     ),
+    # Add Fourier terms to each pollutant dataset
+    df = map(df, ~ .x |>
+      mutate(
+        sin1 = sin(2 * pi * time / 52.18),
+        cos1 = cos(2 * pi * time / 52.18),
+        sin2 = sin(4 * pi * time / 52.18),
+        cos2 = cos(4 * pi * time / 52.18)
+      )
+    ),
+    # Fit Prais–Winsten with seasonality
     mod = map2(
       cont,
       df,
       ~ prais::prais_winsten(
-        as.formula(str_glue("{..1} ~ time + zbe + time_zbe")),
+        as.formula(str_glue("{..1} ~ time + zbe + time_zbe + sin1 + cos1 + sin2 + cos2")),
         index = 'time',
         data = ..2
       )
@@ -1193,6 +1363,7 @@ data_zbe <- tibble(cont = sdata_cont |> dplyr::select(co:so2) |> names()) |>
     )
   )
 ```
+
 
 `r tab_nums("zbe_test_week", "Models to assess if there is a structural change in the trend of time series of contaminants previous and after the day of implementation of the LEZ")`
 
@@ -1331,167 +1502,86 @@ p <- ggplot(data = ndata_zbe, aes(x = date)) +
   labs(y = "") +
   theme_bw()
 
+# tiff(
+#   file.path(r"(4_Productes\2_Figures)", "figure_s5_v2.tiff"),
+#   height = 2000,
+#   width = 2500,
+#   res = 300,
+#   compression = "lzw"
+# )
 p
+# dev.off()
 ```
 
-### Monthly
+#### Model diagnostic
+
+Let's check the autocorrelation of the residuals of these models:
 
 ```{r}
-#| include: false
+get_pw_resid <- function(model) {
+  e <- as.numeric(residuals(model))
+  rho <- as.numeric(tail(model$rho, 1))
 
-sdata_cont <- data_cont |>
-  dplyr::select(date, co:so2) |>
-  mutate(
-    date = ymd(str_glue("{year(date)}-{month(date)}-1"))
-  ) |>
-  group_by(date) |>
-  summarise_at(
-    vars(co:so2),
-    ~ {
-      case_when(
-        !all(is.na(.)) ~ mean(., na.rm = TRUE),
-        .default = NA
-      )
-    }
-  ) |>
-  mutate(
-    time = row_number(),
-    zbe = case_when(
-      date >= ymd("2020-01-01") ~ 1,
-      .default = 0
-    )
-  ) |>
-  ungroup() |>
-  group_by(zbe) |>
-  mutate(
-    time_zbe = row_number(),
-    time_zbe = case_when(
-      zbe == 0 ~ 0,
-      .default = time_zbe
-    )
-  ) |>
-  ungroup()
-
-data_zbe <- tibble(cont = sdata_cont |> dplyr::select(co:so2) |> names()) |>
-  mutate(
-    df = map(
-      cont,
-      ~ {
-        if (. %in% c("co", "so2")) {
-          df <- sdata_cont |>
-            filter(year(date) > 2018)
-        } else {
-          df <- sdata_cont
-        }
-        df
-      }
-    ),
-    mod = map2(
-      cont,
-      df,
-      ~ prais::prais_winsten(
-        as.formula(str_glue("{..1} ~ time + zbe + time_zbe")),
-        index = 'time',
-        data = ..2
-      )
-    ),
-    df_pred = map2(
-      df,
-      mod,
-      ~ {
-        ..1 |>
-          mutate(
-            factual_trend = ..2$coefficients[1] +
-              ..2$coefficients[2] * time +
-              ..2$coefficients[3] * zbe +
-              ..2$coefficients[4] * time_zbe,
-            factual_trend = case_when(
-              date < ymd("2020-01-01") ~ NA,
-              .default = factual_trend
-            ),
-            counter_fact = ..2$coefficients[1] + ..2$coefficients[2] * time
-          )
-      }
-    )
+  c(
+    sqrt(1 - rho^2) * e[1],
+    e[-1] - rho * e[-length(e)]
   )
-```
-
-`r tab_nums("zbe_test_month", "Models to assess if there is a structural change in the trend of time series of contaminants previous and after the day of implementation of the LEZ")`
-
-```{r results = 'asis'}
-ntaula <- map2(
-  data_zbe$mod,
-  data_zbe$cont,
-  ~ summary(..1)$coefficients |>
-    as.data.frame() |>
-    tibble::rownames_to_column() |>
-    dplyr::select(
-      "Coefficient" = "rowname",
-      "Estimate",
-      "P-Value" = "Pr(>|t|)"
-    ) |>
-    mutate(
-      Coefficent = case_when(
-        Coefficient == "time" ~ "Trend (pre-LEZ)",
-        Coefficient == "zbe" ~ "LEZ Intervention",
-        Coefficient == "time_zbe" ~ "Trend (post-LEZ)"
-      ),
-      Estimate = round(Estimate, 3),
-      `P-Value` = case_when(
-        `P-Value` < 0.001 ~ "<0.001",
-        .default = as.character(round(`P-Value`, 3))
-      )
-    ) |>
-    gt(caption = toupper(..2))
-)
-
-for (taula in ntaula) {
-  print(taula)
-  cat("\n\n")
 }
-```
 
-`r fig_nums("data_cont_zbe_month", "Time series of the pollution values monthly averaged, with the line indicating the implementation of LEZ and a line for the trend before the implementation and a line after the implementation.")`
-
-```{r fig.width = 10, fig.height = 8}
 data_zbe <- data_zbe |>
   mutate(
-    plot = map2(
-      df_pred,
-      cont,
-      ~ {
-        ggplot(data = ..1, aes(x = date)) +
-          geom_line(aes(y = get(..2)), alpha = 0.3) +
-          geom_line(
-            aes(y = factual_trend),
-            linetype = "dashed",
-            color = "blue",
-            lwd = 0.9
-          ) +
-          geom_line(
-            aes(y = counter_fact),
-            linetype = "dashed",
-            color = "darkorange",
-            lwd = 0.9
-          ) +
-          geom_vline(
-            xintercept = ymd("2020-01-01"),
-            color = "red",
-            linetype = "dashed"
-          ) +
-          scale_x_date(
-            date_breaks = "1 year",
-            date_labels = "%Y",
-            name = "Date",
-            limits = c(ymd("2017-01-01"), ymd("2022-12-31"))
-          ) +
-          ylab(toupper(..2)) +
-          theme_bw()
-      }
-    )
+    resid_pw = map(mod, get_pw_resid)
   )
+  
+acf_plots_original <- data_zbe |>
+  mutate(
+    plot = map2(
+      resid_pw, cont,
+      ~ forecast::ggAcf(.x, lag.max = 104) +
+        labs(
+          title = toupper(.y),
+          x = "Lag (weeks)",
+          y = "ACF"
+        ) +
+        theme_bw()
+    )
+  ) |>
+  pull(plot)
 
-do.call(gridExtra::grid.arrange, c(data_zbe$plot, list(ncol = 3)))
+# tiff(
+#   file.path(r"(4_Productes\2_Figures)", "figure_s6a_v2.tiff"),
+#   height = 2000,
+#   width = 2500,
+#   res = 300,
+#   compression = "lzw"
+# )
+patchwork::wrap_plots(acf_plots_original, ncol = 2)
+# dev.off()
+
+
+pacf_plots_original <- data_zbe |>
+  mutate(
+    plot = map2(
+      resid_pw, cont,
+      ~ forecast::ggPacf(.x, lag.max = 104) +
+        labs(
+          title = toupper(.y),
+          x = "Lag (weeks)",
+          y = "PACF"
+        ) +
+        theme_bw()
+    )
+  ) |>
+  pull(plot)
+
+# tiff(
+#   file.path(r"(4_Productes\2_Figures)", "figure_s6b_v2.tiff"),
+#   height = 2000,
+#   width = 2500,
+#   res = 300,
+#   compression = "lzw"
+# )
+patchwork::wrap_plots(pacf_plots_original, ncol = 2)
+# dev.off()
 ```
 
-::: 
