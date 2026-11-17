@@ -5,6 +5,36 @@ format: html
 
 Data is not available due to privacy restrictions. Below is the code used for the main analysis of pollution on arrhythmias.
 
+```{r}
+#Load libraries
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(purrr)
+library(stringr)
+library(captioner)
+library(lme4)
+library(sjPlot)
+library(ggplot2)
+library(gtsummary)
+library(gt)
+library(flowchart)
+library(lubridate)
+library(plotly)
+library(dlnm)
+library(gnm)
+library(splines)
+library(ggh4x)
+library(strucchange)
+library(prais)
+library(imputeTS)
+library(gridExtra)
+#Enumerate tables and figures
+fig_nums <- captioner(prefix = 'Figura')
+tab_nums <- captioner(prefix = 'Tabla')
+```
+
 # Flowchart
 
 `r fig_nums("flowchart_study", "Flowchart of the patients-episodes in the study")`
@@ -1209,6 +1239,74 @@ plot(
 )
 axis(1, date_lab, format(date_lab, "%Y"))
 par(mfrow = c(1, 1))
+```
+
+`r tab_nums("descriptive_arrhythmias_ccross", "Descriptive characteristics of the case-crossover study")`
+
+```{r}
+# Calculate descriptive statistics
+table_arrhythmias <- purrr::map_dfr(
+  c("y_auri", "y_vent"),
+  function(outcome_name) {
+
+    df <- case_data
+
+    # Extract outcome as a vector
+    event <- df[[outcome_name]]
+
+    # Exclude missing outcomes
+    df <- df[!is.na(event), ]
+    df$event <- event[!is.na(event)]
+
+    # Identify informative strata
+    strata_info <- df |>
+      group_by(strata) |>
+      summarise(
+        informative = any(event == 1) & any(event == 0),
+        .groups = "drop"
+      )
+
+    tibble(
+      arrhythmia = if (outcome_name == "y_auri") {
+        "Auricular"
+      } else {
+        "Ventricular"
+      },
+      person_time = nrow(df),
+      patients = n_distinct(df$patient_id),
+      event_time = sum(df$event),
+      total_strata = n_distinct(df$strata),
+      informative_strata = sum(strata_info$informative)
+    )
+  }
+)
+
+# Create GT table
+table_arrhythmias |>
+  gt() |>
+  cols_label(
+    arrhythmia = "Arrhythmia",
+    person_time = "Person-time (days)",
+    patients = "Patients",
+    event_time = "Event-time (days)",
+    total_strata = "Total strata",
+    informative_strata = "Informative strata"
+  ) |>
+  fmt_integer(
+    columns = c(
+      person_time,
+      patients,
+      event_time,
+      total_strata,
+      informative_strata
+    ),
+    use_seps = TRUE
+  ) |>
+  cols_align(
+    align = "center",
+    columns = -arrhythmia
+  ) |>
+  opt_row_striping()
 ```
 
 ## Autocorrelation arrhythmias
